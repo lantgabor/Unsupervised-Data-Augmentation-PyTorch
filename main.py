@@ -1,13 +1,12 @@
 import os
-from collections import OrderedDict
 
-import sys
 import time
 import argparse
 
 import torch
 from torch import nn, optim
 from torch.backends import cudnn
+from torch.nn.functional import kl_div, softmax, log_softmax
 from torch.autograd import Variable
 
 import dataset as dataset
@@ -266,8 +265,28 @@ def uda_train(labelled_loader, unlabelled_loader, valid_loader, num_classes, mod
             iter_u = iter(unlabelled_loader)
             unlabel1, unlabel2 = next(iter_u)
         data_all = torch.cat([input, unlabel1, unlabel2]).cuda()
-        
+
+        # supervised
         preds_all = model(data_all)
+        preds = preds_all[:len(input)]
+        # loss for supervised learning
+        loss = criterion(preds, target)
+
+        # unsupervised
+        preds_unsup = preds_all[len(input):]
+        preds1, preds2 = torch.chunk(preds_unsup, 2)
+        preds1 = softmax(preds1, dim=1).detach()
+        preds2 = log_softmax(preds2, dim=1)
+
+        loss_kldiv = kl_div(preds2, preds1, reduction='none')
+        # loss for unsupervised
+        loss_kldiv = torch.sum(loss_kldiv, dim=1)
+
+        loss += 5.0 * torch.mean(loss_kldiv)
+
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
 
 
 
