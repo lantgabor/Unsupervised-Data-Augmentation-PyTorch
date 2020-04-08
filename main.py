@@ -247,9 +247,27 @@ def run_supevised():
 
 
 def uda_train(labelled_loader, unlabelled_loader, valid_loader, num_classes, model, criterion, optimizer, epoch):
+    data_time = AverageMeter()
+
     model.train()
 
+    end = time.time()
+    iter_unlabelled = iter(unlabelled_loader)
+
     for i, (input, target) in enumerate(labelled_loader):
+
+        # measure data loading time
+        data_time.update(time.time() - end)
+
+        target = target.cuda()
+        try:
+            unlabel1, unlabel2 = next(iter_unlabelled)
+        except StopIteration:
+            iter_u = iter(unlabelled_loader)
+            unlabel1, unlabel2 = next(iter_u)
+        data_all = torch.cat([input, unlabel1, unlabel2]).cuda()
+        
+        preds_all = model(data_all)
 
 
 
@@ -258,11 +276,21 @@ def uda_validate(valid_loader, num_classes, model, criterion):
 
 
 def run_unsupervised():
-    labelled_loader, unlabelled_loader, valid_loader, num_classes = dataset.cifar10_unsupervised_dataloaders()
+    global args, best_prec1
+    best_valid_loss = 10e10
 
+    # Check the save_dir exists or not
+    if not os.path.exists(args.save_dir):
+        os.makedirs(args.save_dir)
+
+    # load model
     model = networks.fastresnet()
     model.cuda()
 
+    # data loaders
+    labelled_loader, unlabelled_loader, valid_loader, num_classes = dataset.cifar10_unsupervised_dataloaders()
+
+    # criterion and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
     consistency_criterion = nn.MSELoss().cuda()
 
@@ -274,8 +302,9 @@ def run_unsupervised():
     # TODO: Change to cosine annealing, gradual warmup
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 150], last_epoch=args.start_epoch - 1)
 
+    # UDA train loop
     for epoch in range(args.start_epoch, args.epochs):
-        # TODO: if RESUME
+        # TODO: if RESUME load model
         print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
 
         uda_train(labelled_loader, unlabelled_loader, valid_loader, num_classes, model, criterion, optimizer, epoch)
@@ -283,8 +312,11 @@ def run_unsupervised():
 
         # evaluate on validation set
         prec1 = uda_validate(valid_loader, num_classes, model, criterion)
-        
 
+        is_best = prec1 > best_prec1
+        best_prec1 = max(prec1, best_prec1)
+
+        # TODO: SAVE model
 
 
 
