@@ -98,9 +98,9 @@ def cifar10_supervised_dataloaders():
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225]),
         ]), download=True),
-        batch_size=128,
+        batch_size=64,
         shuffle=True,
-        num_workers=16,
+        num_workers=4,
         pin_memory=True
     )
 
@@ -109,10 +109,10 @@ def cifar10_supervised_dataloaders():
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225]),
-        ])),
-        batch_size=128,
+        ]), download=True),
+        batch_size=64,
         shuffle=False,
-        num_workers=16,
+        num_workers=4,
         pin_memory=True
     )
     return train_loader, val_loader

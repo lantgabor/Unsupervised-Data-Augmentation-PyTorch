@@ -20,7 +20,7 @@ parser.add_argument('--evaluate', '-e', action='store_true', help='Evaluation mo
 parser.add_argument('--baseline', '-b', action='store_true',default=False, help='Train as supervised for baseline')
 parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
-parser.add_argument('--startepoch', '-se', default=0, type=int, metavar='N',
+parser.add_argument('--start-epoch', '-se', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
 parser.add_argument('--save-dir', dest='save_dir',
                     help='The directory used to save the trained models',
@@ -178,7 +178,7 @@ def run_supevised():
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
 
-    model = networks.wideresnet()
+    model = networks.fastresnet()
     model.cuda()
 
     train_loader, val_loader = dataset.cifar10_supervised_dataloaders()
@@ -191,7 +191,7 @@ def run_supevised():
                                 momentum=0.9,
                                 weight_decay=1e-4)
 
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 150], last_epoch=args.startepoch - 1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 150], last_epoch=args.start_epoch - 1)
 
 
     # optionally resume from a checkpoint
@@ -226,6 +226,7 @@ def run_supevised():
         best_prec1 = max(prec1, best_prec1)
 
         if epoch > 0 and epoch % 50 == 0:
+            print('Save checkpoint')
             save_checkpoint({
                 'epoch': epoch + 1,
                 'scheduler': scheduler.state_dict(),
@@ -234,13 +235,58 @@ def run_supevised():
                 'best_prec1': best_prec1,
             }, is_best, filename=os.path.join(args.save_dir, 'checkpoint.th'))
 
-        save_checkpoint({
-            'state_dict': model.state_dict(),
-            'best_prec1': best_prec1,
-        }, is_best, filename=os.path.join(args.save_dir, 'model.th'))
+        if(is_best):
+            print('Saving better model')
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'scheduler': scheduler.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'state_dict': model.state_dict(),
+                'best_prec1': best_prec1,
+            }, is_best, filename=os.path.join(args.save_dir, 'best_model.th'))
+
+
+def uda_train(labelled_loader, unlabelled_loader, valid_loader, num_classes, model, criterion, optimizer, epoch):
+    model.train()
+
+    for i, (input, target) in enumerate(labelled_loader):
+
+
+
+def uda_validate(valid_loader, num_classes, model, criterion):
+    pass
+
 
 def run_unsupervised():
-    pass
+    labelled_loader, unlabelled_loader, valid_loader, num_classes = dataset.cifar10_unsupervised_dataloaders()
+
+    model = networks.fastresnet()
+    model.cuda()
+
+    criterion = nn.CrossEntropyLoss().cuda()
+    consistency_criterion = nn.MSELoss().cuda()
+
+    optimizer = torch.optim.SGD(model.parameters(),
+                                lr=0.1,
+                                momentum=0.9,
+                                weight_decay=1e-4)
+
+    # TODO: Change to cosine annealing, gradual warmup
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 150], last_epoch=args.start_epoch - 1)
+
+    for epoch in range(args.start_epoch, args.epochs):
+        # TODO: if RESUME
+        print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
+
+        uda_train(labelled_loader, unlabelled_loader, valid_loader, num_classes, model, criterion, optimizer, epoch)
+        scheduler.step()
+
+        # evaluate on validation set
+        prec1 = uda_validate(valid_loader, num_classes, model, criterion)
+        
+
+
+
 
 
 if __name__ == '__main__':
