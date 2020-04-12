@@ -15,7 +15,6 @@ import dataset as dataset
 import networks
 
 parser = argparse.ArgumentParser(description='Pythorch Supervised FULL CIFAR-10 implementation')
-parser.add_argument('--test', '-t', action='store_true', help='Test mode')
 parser.add_argument('--evaluate', '-e', action='store_true', help='Evaluation mode')
 parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
@@ -165,8 +164,7 @@ def validate(val_loader, model, criterion):
                           i, len(val_loader), batch_time=batch_time, loss=losses,
                           top1=top1))
 
-    print(' * Prec@1 {top1.avg:.3f}'
-          .format(top1=top1))
+    print(' * Prec@1 {top1.avg:.3f}'.format(top1=top1))
 
     return top1.avg
 

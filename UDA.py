@@ -15,11 +15,8 @@ import dataset as dataset
 import networks
 
 parser = argparse.ArgumentParser(description='Pythorch UDA CIFAR-10 implementation')
-parser.add_argument('--supervised_wideresnet', action='store_true', help='Train and eval for baseline')
-parser.add_argument('--test', '-t', action='store_true', help='Test mode')
 parser.add_argument('--evaluate', '-e', action='store_true', help='Evaluation mode')
-parser.add_argument('--baseline', '-b', action='store_true',default=False, help='Train as supervised for baseline')
-parser.add_argument('--epochs', default=200, type=int, metavar='N',
+parser.add_argument('--epochs', default=1600, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', '-se', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -32,6 +29,12 @@ args = parser.parse_args()
 best_prec1 = 0
 
 writer =  SummaryWriter()
+
+def save_checkpoint(state, filename='checkpoint.pth.tar'):
+    """
+    Save the training model
+    """
+    torch.save(state, filename)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -50,53 +53,139 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-def uda_train(labelled_loader, unlabelled_loader, valid_loader, num_classes, model, criterion, optimizer, epoch):
+def accuracy(output, target, topk=(1,)):
+    """Computes the precision@k for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        correct_k = correct[:k].view(-1).float().sum(0)
+        res.append(correct_k.mul_(100.0 / batch_size))
+    return res
+
+def uda_train(train_labelled, train_unlabelled, train_unlabelled_aug, model, criterion, consistency_criterion, optimizer, epoch):
     data_time = AverageMeter()
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+
+    def cycle(iterable):
+        while True:
+            for i in iterable:
+                yield i
 
     model.train()
 
     end = time.time()
+
+    lam = 1.0 # TODO Check paper lambda
+
+    train_labelled_iter = cycle(train_labelled)
+    train_unlabelled_iter = cycle(train_unlabelled)
+    train_unlabelled_aug_iter = cycle(train_unlabelled_aug)
+
+    # measure data loading time
+    data_time.update(time.time() - end)
+
+    x, y = next(train_labelled_iter)
+
+    x = x.cuda()
+    y = y.cuda()
+
+    y_pred = model(x)
+
+    # Supervised part
+    supervised_loss = criterion(y_pred, y)
+    writer.add_scalar('Train/Supervised loss', supervised_loss.float())
+
+    # TODO: TSA loss supervised
+
+    unsup_x, unsup_aug_x = next(train_unlabelled_iter)
+    unsup_x = unsup_x.cuda()
+    unsup_aug_x = unsup_aug_x.cuda()
+
+    # Unsupervised part
+    unsup_orig_y_pred = model(unsup_x).detach()
+    unsup_orig_y_probas = torch.softmax(unsup_orig_y_pred, dim=-1)
+    unsup_aug_y_pred = model(unsup_aug_x)
+    unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_pred, dim=-1)
+    consistency_loss1 = consistency_criterion(unsup_aug_y_probas, unsup_orig_y_probas)
+
+    unsup_x, unsup_aug_x = next(train_unlabelled_aug_iter)
+    unsup_x = unsup_x.cuda()
+    unsup_aug_x = unsup_aug_x.cuda()
+
+    # Unsupervised part
+    unsup_orig_y_pred = model(unsup_x).detach()
+    unsup_orig_y_probas = torch.softmax(unsup_orig_y_pred, dim=-1)
+    unsup_aug_y_pred = model(unsup_aug_x)
+    unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_pred, dim=-1)
+    consistency_loss2 = consistency_criterion(unsup_aug_y_probas, unsup_orig_y_probas)
+
+    optimizer.zero_grad()
+
+    final_loss = supervised_loss + lam * (consistency_loss1 + consistency_loss2)
+    final_loss.backward()
+
+    optimizer.step()
+
+    # measure accuracy and record loss
+    prec1 = accuracy(y_pred.data, y)[0]
+    losses.update(final_loss.item(), input.size(0))
+    top1.update(prec1.item(), input.size(0))
+
+    # measure elapsed time
+    batch_time.update(time.time() - end)
+    end = time.time()
+
+    if i % 50 == 0:
+        print('Epoch: [{0}][{1}/{2}]\t'
+              'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+              'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+              'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+              'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+            epoch, 0, len(labelled_loader), batch_time=batch_time,
+            data_time=data_time, loss=losses, top1=top1))
+
+
+
+def uda_validate(valid_loader, unlabelled_loader, model, criterion):
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+
+    model.eval()
+
+    end = time.time()
+
     iter_unlabelled = iter(unlabelled_loader)
 
-    for i, (input, target) in enumerate(labelled_loader):
+    with torch.no_grad():
 
-        # measure data loading time
-        data_time.update(time.time() - end)
+            # TODO : UDA VALIDATION
 
-        target = target.cuda()
-        try:
-            unlabel1, unlabel2 = next(iter_unlabelled)
-        except StopIteration:
-            iter_u = iter(unlabelled_loader)
-            unlabel1, unlabel2 = next(iter_u)
-        data_all = torch.cat([input, unlabel1, unlabel2]).cuda()
+            writer.add_scalar('Valid/UDA combined loss', loss.float())
 
-        # supervised
-        preds_all = model(data_all)
-        preds = preds_all[:len(input)]
-        # loss for supervised learning
-        loss = criterion(preds, target)
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
 
-        # unsupervised
-        preds_unsup = preds_all[len(input):]
-        preds1, preds2 = torch.chunk(preds_unsup, 2)
-        preds1 = softmax(preds1, dim=1).detach()
-        preds2 = log_softmax(preds2, dim=1)
+            if i % 50 == 0:
+                print('Test: [{0}/{1}]\t'
+                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                          i, len(valid_loader), batch_time=batch_time, loss=losses,
+                          top1=top1))
 
-        loss_kldiv = kl_div(preds2, preds1, reduction='none')
-        # loss for unsupervised
-        loss_kldiv = torch.sum(loss_kldiv, dim=1)
+    print(' * Prec@1 {top1.avg:.3f}'.format(top1=top1))
 
-        loss += 5.0 * torch.mean(loss_kldiv)
-
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-
-
-
-def uda_validate(valid_loader, num_classes, model, criterion):
-    pass
+    return top1.avg
 
 
 def run_unsupervised():
@@ -112,38 +201,75 @@ def run_unsupervised():
     model.cuda()
 
     # data loaders
-    labelled_loader, unlabelled_loader, valid_loader, num_classes = dataset.cifar10_unsupervised_dataloaders()
+    train_labelled, train_unlabelled, train_unlabelled_aug, test = dataset.cifar10_unsupervised_dataloaders()
 
     # criterion and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
-    consistency_criterion = nn.MSELoss().cuda()
+    consistency_criterion = nn.KLDivLoss(reduction='batchmean').cuda()
 
     optimizer = torch.optim.SGD(model.parameters(),
                                 lr=0.1,
                                 momentum=0.9,
-                                weight_decay=1e-4)
+                                weight_decay=1e-4,
+                                nesterov=True)
 
-    # TODO: Change to cosine annealing, gradual warmup
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 150], last_epoch=args.start_epoch - 1)
+    # warmup steps
+    t_max = args.epochs - 120
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=0.)
+
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print("=> loading checkpoint '{}'".format(args.resume))
+            checkpoint = torch.load(args.resume)
+            model.load_state_dict(checkpoint['state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            scheduler.load_state_dict(checkpoint['scheduler'])
+            args.start_epoch = checkpoint['epoch']
+            print("=> loaded checkpoint '{}' (epoch {})"
+                  .format(args.evaluate, checkpoint['epoch']))
+        else:
+            print("=> no checkpoint found at '{}'".format(args.resume))
 
     # UDA train loop
     for epoch in range(args.start_epoch, args.epochs):
-        # TODO: if RESUME load model
+
         print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
 
-        uda_train(labelled_loader, unlabelled_loader, valid_loader, num_classes, model, criterion, optimizer, epoch)
+        uda_train(train_labelled, train_unlabelled, train_unlabelled_aug, model, criterion, consistency_criterion, optimizer, epoch)
+
         scheduler.step()
 
         # evaluate on validation set
-        prec1 = uda_validate(valid_loader, num_classes, model, criterion)
+        prec1 = uda_validate(test, train_unlabelled, model, criterion)
 
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
 
-        # TODO: SAVE model
+        writer.add_scalar('Acc/valid', best_prec1, epoch)
 
+        # save checkpoint
+        if epoch > 0 and epoch % 50 == 0:
+            print('Save checkpoint')
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'scheduler': scheduler.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'state_dict': model.state_dict(),
+                'best_prec1': best_prec1,
+            }, filename=os.path.join(args.save_dir, 'checkpoint.th'))
 
+        if (is_best):
+            print('Saving better model')
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'scheduler': scheduler.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'state_dict': model.state_dict(),
+                'best_prec1': best_prec1,
+            }, filename=os.path.join(args.save_dir, 'best_model.th'))
 
+            writer.add_scalar('Acc/valid', best_prec1, epoch)
 
 if __name__ == '__main__':
     run_unsupervised()
