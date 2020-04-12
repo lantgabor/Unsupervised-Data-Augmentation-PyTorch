@@ -163,11 +163,23 @@ def uda_validate(valid_loader, unlabelled_loader, model, criterion):
 
     end = time.time()
 
-    iter_unlabelled = iter(unlabelled_loader)
-
     with torch.no_grad():
+        for i, (input, target) in enumerate(valid_loader):
+            target = target.cuda()
+            input_var = input.cuda()
+            target_var = target.cuda()
 
-            # TODO : UDA VALIDATION
+            # compute output
+            output = model(input_var)
+            loss = criterion(output, target_var)
+
+            output = output.float()
+            loss = loss.float()
+            
+            # measure accuracy and record loss
+            prec1 = accuracy(output.data, target)[0]
+            losses.update(loss.item(), input.size(0))
+            top1.update(prec1.item(), input.size(0))
 
             writer.add_scalar('Valid/UDA combined loss', loss.float())
 
