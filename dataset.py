@@ -1,16 +1,13 @@
-import torch
-from torchvision import datasets
-from torch.utils.data import DataLoader, Subset
-
 import numpy as np
-
+import torch
+from torch.utils.data import DataLoader, Subset
+from torchvision import datasets
 from torchvision import transforms
 
 np.random.seed(2)
 
 
 def cifar10_unsupervised_dataloaders():
-
     print('Data Preparation')
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -58,7 +55,8 @@ def cifar10_unsupervised_dataloaders():
                 unlabelled_indices.append(i)
 
     # Check
-    assert len(set(labelled_indices) & set(unlabelled_indices)) == 0, "{}".format(set(labelled_indices) & set(unlabelled_indices))
+    assert len(set(labelled_indices) & set(unlabelled_indices)) == 0, "{}".format(
+        set(labelled_indices) & set(unlabelled_indices))
 
     # Labeled and unlabeled dataset
     train_labelled_ds = Subset(cifar10_train_ds, labelled_indices)
@@ -66,14 +64,18 @@ def cifar10_unsupervised_dataloaders():
 
     # Data loader for labeled and unlabeled train dataset
     train_labelled = DataLoader(
-        train_labelled_ds, batch_size=32, shuffle=False,
-        num_workers=8,
+        train_labelled_ds,
+        batch_size=64,
+        shuffle=False,
+        num_workers=4,
         pin_memory=True
     )
 
     train_unlabelled = DataLoader(
-        train_unlabelled_ds, batch_size=32,
-        shuffle=False, num_workers=1,
+        train_unlabelled_ds,
+        batch_size=64,
+        shuffle=False,
+        num_workers=4,
         pin_memory=True
     )
 
@@ -81,28 +83,32 @@ def cifar10_unsupervised_dataloaders():
     cifar10_test_ds = datasets.CIFAR10('/data/', transform=transform_test, train='test', download=True)
 
     test = DataLoader(
-        cifar10_test_ds, batch_size=32, shuffle=False,
-        num_workers=8,
+        cifar10_test_ds, batch_size=64,
+        shuffle=False,
+        num_workers=4,
         pin_memory=True
     )
 
     return train_labelled, train_unlabelled, test, num_classes
 
+
 def cifar10_supervised_dataloaders():
     train_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10(root='./data', train=True,
-            transform=transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(32, 4),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
-        ]), download=True),
+                         transform=transforms.Compose([
+                             transforms.RandomHorizontalFlip(),
+                             transforms.RandomCrop(32, 4),
+                             transforms.ToTensor(),
+                             transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                  std=[0.229, 0.224, 0.225]),
+                         ]), download=True),
         batch_size=64,
         shuffle=True,
         num_workers=4,
         pin_memory=True
     )
+
+    print('Loading dataset {0} for training -- Num_samples: {1}, num_classes: {2}'.format(datasets.CIFAR10.__name__,len(train_loader.dataset),10))
 
     val_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10(root='./data', train=False, transform=transforms.Compose([
@@ -115,5 +121,7 @@ def cifar10_supervised_dataloaders():
         num_workers=4,
         pin_memory=True
     )
-    return train_loader, val_loader
 
+    print('Loading dataset {0} for validating -- Num_samples: {1}, num_classes: {2}'.format(datasets.CIFAR10.__name__,len(val_loader.dataset), 10))
+
+    return train_loader, val_loader
