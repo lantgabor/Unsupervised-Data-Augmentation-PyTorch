@@ -7,37 +7,29 @@ from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop
 
 np.random.seed(2)
 
-class TransformedDataset(Dataset):
-
-    def __init__(self, ds, transform_fn):
-        assert isinstance(ds, Dataset)
-        assert callable(transform_fn)
-        self.ds = ds
-        self.transform_fn = transform_fn
-
+class TransformedDataset1(Dataset):
+    def __init__(self, dataset, transform):
+        self.data = dataset
+        self.transform = transform
     def __len__(self):
-        return len(self.ds)
+        return len(self.data)
 
     def __getitem__(self, index):
-        dp = self.ds[index]
-        return self.transform_fn(dp)
+        x, y = self.data[index]
+        x = self.transform(x)
+        return x, y
 
+class TransformedDataset2(Dataset):
+    def __init__(self, dataset, transform):
+        self.data = dataset
+        self.transform = transform
+    def __len__(self):
+        return len(self.data)
 
-class UDATransform:
-
-    def __init__(self, original_transform, augmentation_transform, copy=False):
-        self.original_transform = original_transform
-        self.augmentation_transform = augmentation_transform
-        self.copy = copy
-
-    def __call__(self, dp):
-        if self.copy:
-            aug_dp = dp.copy()
-        else:
-            aug_dp = dp
-        tdp1 = self.original_transform(dp)
-        tdp2 = self.augmentation_transform(aug_dp)
-        return tdp1, tdp2
+    def __getitem__(self, idx):
+        item = self.data[idx]
+        item = self.transform(item)
+        return item
 
 def cifar10_unsupervised_dataloaders():
     print('Data Preparation')
@@ -65,7 +57,7 @@ def cifar10_unsupervised_dataloaders():
     ])
 
     # Train dataset with and without labels
-    cifar10_train_ds = datasets.CIFAR10('/data/', transform=train_transform, train='train', download=True)
+    cifar10_train_ds = datasets.CIFAR10('/data/', train='train', download=True)
     # Number of classes calculated here
     num_classes = len(cifar10_train_ds.classes)
 
@@ -96,13 +88,9 @@ def cifar10_unsupervised_dataloaders():
     train_labelled_ds = Subset(cifar10_train_ds, labelled_indices)
     train_unlabelled_ds = Subset(cifar10_train_ds, unlabelled_indices)
 
-    train1_sup_ds = TransformedDataset(train_labelled_ds, transform_fn=lambda dp: (train_transform(dp[0]), dp[1]))
-
-    original_transform = lambda dp: train_transform(dp[0])
-    augmentation_transform = lambda dp: unsupervised_train_transformation(dp[0])
-
-    train_unlabelled_ds = TransformedDataset(train_labelled_ds, UDATransform(original_transform, augmentation_transform))
-    train_unlabelled_aug_ds = TransformedDataset(train_unlabelled_ds, UDATransform(original_transform, augmentation_transform))
+    train_labelled_ds = TransformedDataset1(train_labelled_ds, train_transform)
+    train_unlabelled_ds_t = TransformedDataset2(train_unlabelled_ds, train_transform)
+    train_unlabelled_aug_ds_t = TransformedDataset2(train_unlabelled_ds, unsupervised_train_transformation)
 
     # Data loader for labeled and unlabeled train dataset
     train_labelled = DataLoader(
@@ -114,7 +102,7 @@ def cifar10_unsupervised_dataloaders():
     )
 
     train_unlabelled = DataLoader(
-        train_unlabelled_ds,
+        train_unlabelled_ds_t,
         batch_size=64,
         shuffle=False,
         num_workers=4,
@@ -122,7 +110,7 @@ def cifar10_unsupervised_dataloaders():
     )
 
     train_unlabelled_aug = DataLoader(
-        train_unlabelled_aug_ds,
+       train_unlabelled_aug_ds_t,
         batch_size=64,
         shuffle=False,
         num_workers=4,
