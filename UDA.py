@@ -74,15 +74,20 @@ def uda_train(train_labelled, train_unlabelled, train_unlabelled_aug, model, cri
     losses = AverageMeter()
     top1 = AverageMeter()
 
+    def cycle(iterable):
+        while True:
+            for i in iterable:
+                yield i
+
     model.train()
 
     end = time.time()
 
     lam = 1.0 # TODO Check paper lambda
 
-    train_labelled_iter = iter(train_labelled)
-    train_unlabelled_iter = iter(train_unlabelled)
-    train_unlabelled_aug_iter = iter(train_unlabelled_aug)
+    train_labelled_iter = cycle(train_labelled)
+    train_unlabelled_iter = cycle(train_unlabelled)
+    train_unlabelled_aug_iter = cycle(train_unlabelled_aug)
 
     # measure data loading time
     data_time.update(time.time() - end)
@@ -100,20 +105,24 @@ def uda_train(train_labelled, train_unlabelled, train_unlabelled_aug, model, cri
 
     # TODO: TSA loss supervised
 
-    # Unsupervised part
-    try:
-        unsup_x = next(train_unlabelled_iter)
-    except StopIteration:
-        train_unlabelled_iter = iter(train_unlabelled)
-        unsup_x = next(train_unlabelled_iter)
-
+    unsup_x, unsup_aug_x = next(train_unlabelled_iter)
     unsup_x = unsup_x.cuda()
+    unsup_aug_x = unsup_aug_x.cuda()
+
+    # Unsupervised part
     unsup_orig_y_pred = model(unsup_x).detach()
     unsup_orig_y_probas = torch.softmax(unsup_orig_y_pred, dim=-1)
-    consistency_loss1 = consistency_criterion(unsup_orig_y_probas)
+    unsup_aug_y_pred = model(unsup_aug_x)
+    unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_pred, dim=-1)
+    consistency_loss1 = consistency_criterion(unsup_aug_y_probas, unsup_orig_y_probas)
 
-    unsup_aug_x = next(train_unlabelled_aug_iter)
+    unsup_x, unsup_aug_x = next(train_unlabelled_aug_iter)
+    unsup_x = unsup_x.cuda()
     unsup_aug_x = unsup_aug_x.cuda()
+
+    # Unsupervised part
+    unsup_orig_y_pred = model(unsup_x).detach()
+    unsup_orig_y_probas = torch.softmax(unsup_orig_y_pred, dim=-1)
     unsup_aug_y_pred = model(unsup_aug_x)
     unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_pred, dim=-1)
     consistency_loss2 = consistency_criterion(unsup_aug_y_probas, unsup_orig_y_probas)
