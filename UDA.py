@@ -16,7 +16,7 @@ import networks
 
 parser = argparse.ArgumentParser(description='Pythorch UDA CIFAR-10 implementation')
 parser.add_argument('--evaluate', '-e', action='store_true', help='Evaluation mode')
-parser.add_argument('--epochs', default=1600, type=int, metavar='N',
+parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', '-se', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -28,7 +28,7 @@ parser.add_argument('--resume', default='save', type=str, metavar='PATH',
 args = parser.parse_args()
 best_prec1 = 0
 
-writer =  SummaryWriter()
+writer =  SummaryWriter('UDA Fastresnet -- 4000-46000')
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'):
     """
@@ -69,91 +69,79 @@ def accuracy(output, target, topk=(1,)):
     return res
 
 def uda_train(train_labelled, train_unlabelled, train_unlabelled_aug, model, criterion, consistency_criterion, optimizer, epoch):
+    """
+        Run one train epoch
+    """
     data_time = AverageMeter()
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
 
-    def cycle(iterable):
-        while True:
-            for i in iterable:
-                yield i
-
     model.train()
 
     end = time.time()
 
-    lam = 1.0 # TODO Check paper lambda
+    lam = 1.0
 
-    train_labelled_iter = cycle(train_labelled)
-    train_unlabelled_iter = cycle(train_unlabelled)
-    train_unlabelled_aug_iter = cycle(train_unlabelled_aug)
+    label_iter = iter(train_labelled)
+    unsup_iter = iter(train_unlabelled)
 
-    # measure data loading time
-    data_time.update(time.time() - end)
+    # train over 1 epoch, drop y for unlabelled data
+    for i, (unlabel_aug_x, _) in enumerate(train_unlabelled_aug):
+        # measure data loading time
+        data_time.update(time.time() - end)
 
-    x, y = next(train_labelled_iter)
+        # SUPERVISED
+        try:
+            x,y = next(label_iter)
+        except StopIteration:
+            label_iter = iter(train_labelled)
+            x, y = next(label_iter)
 
-    x = x.cuda()
-    y = y.cuda()
+        x = x.cuda()
+        y = y.cuda()
 
-    y_pred = model(x)
+        y_pred = model(x)
 
-    # Supervised part
-    supervised_loss = criterion(y_pred, y)
-    writer.add_scalar('Train/Supervised loss', supervised_loss.float())
+        sup_loss = criterion(y_pred, y)
 
-    # TODO: TSA loss supervised
+        # UNSUPERVISED
+        unlabel_x, _ = next(unsup_iter)
+        unlabel_x = unlabel_x.cuda()
+        unlabel_aug_x = unlabel_aug_x.cuda()
 
-    unsup_x, unsup_aug_x = next(train_unlabelled_iter)
-    unsup_x = unsup_x.cuda()
-    unsup_aug_x = unsup_aug_x.cuda()
+        unsup_y_pred = model(unlabel_x).detach()
+        unsup_y_probas = torch.softmax(unsup_y_pred, dim=-1)
 
-    # Unsupervised part
-    unsup_orig_y_pred = model(unsup_x).detach()
-    unsup_orig_y_probas = torch.softmax(unsup_orig_y_pred, dim=-1)
-    unsup_aug_y_pred = model(unsup_aug_x)
-    unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_pred, dim=-1)
-    consistency_loss1 = consistency_criterion(unsup_aug_y_probas, unsup_orig_y_probas)
+        unsup_aug_y_pred = model(unlabel_aug_x)
+        unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_pred, dim=-1)
 
-    unsup_x, unsup_aug_x = next(train_unlabelled_aug_iter)
-    unsup_x = unsup_x.cuda()
-    unsup_aug_x = unsup_aug_x.cuda()
+        unsup_loss = consistency_criterion(unsup_aug_y_probas, unsup_y_probas)
 
-    # Unsupervised part
-    unsup_orig_y_pred = model(unsup_x).detach()
-    unsup_orig_y_probas = torch.softmax(unsup_orig_y_pred, dim=-1)
-    unsup_aug_y_pred = model(unsup_aug_x)
-    unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_pred, dim=-1)
-    consistency_loss2 = consistency_criterion(unsup_aug_y_probas, unsup_orig_y_probas)
+        final_loss = sup_loss + lam * unsup_loss
 
-    optimizer.zero_grad()
+        optimizer.zero_grad()
+        final_loss.backward()
+        optimizer.step()
 
-    final_loss = supervised_loss + lam * (consistency_loss1 + consistency_loss2)
-    final_loss.backward()
+        # measure accuracy and record loss
+        losses.update(final_loss.item(), unlabel_aug_x.size(0))
 
-    optimizer.step()
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
 
-    # measure accuracy and record loss
-    prec1 = accuracy(y_pred.data, y)[0]
-    losses.update(final_loss.item(), input.size(0))
-    top1.update(prec1.item(), input.size(0))
+        if i % 50 == 0:
+            print('Epoch: [{0}][{1}/{2}]\t'
+                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
+                epoch, i, len(train_unlabelled_aug), batch_time=batch_time,
+                data_time=data_time, loss=losses))
 
-    # measure elapsed time
-    batch_time.update(time.time() - end)
-    end = time.time()
+    return losses.avg
 
-    print('Epoch: [{0}][{1}/{2}]\t'
-              'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-              'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-              'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-              'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
-            epoch, 0, len(train_labelled), batch_time=batch_time,
-            data_time=data_time, loss=losses, top1=top1))
-
-
-
-def uda_validate(valid_loader, unlabelled_loader, model, criterion):
+def uda_validate(valid_loader, unlabelled_loader, model, criterion, epoch):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -180,7 +168,7 @@ def uda_validate(valid_loader, unlabelled_loader, model, criterion):
             losses.update(loss.item(), input.size(0))
             top1.update(prec1.item(), input.size(0))
 
-            writer.add_scalar('Valid/UDA combined loss', loss.float())
+            writer.add_scalar('Valid/UDA combined loss', loss.float(), epoch)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -196,7 +184,7 @@ def uda_validate(valid_loader, unlabelled_loader, model, criterion):
 
     print(' * Prec@1 {top1.avg:.3f}'.format(top1=top1))
 
-    return top1.avg
+    return top1.avg, losses.avg
 
 
 def run_unsupervised():
@@ -247,17 +235,21 @@ def run_unsupervised():
 
         print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
 
-        uda_train(train_labelled, train_unlabelled, train_unlabelled_aug, model, criterion, consistency_criterion, optimizer, epoch)
+        trainloss = uda_train(train_labelled, train_unlabelled, train_unlabelled_aug, model, criterion, consistency_criterion, optimizer, epoch)
+
+        writer.add_scalar('Loss/train', trainloss, epoch)
 
         scheduler.step()
 
         # evaluate on validation set
-        prec1 = uda_validate(test, train_unlabelled, model, criterion)
+        valacc, valloss = uda_validate(test, train_unlabelled, model, criterion, epoch)
 
-        is_best = prec1 > best_prec1
-        best_prec1 = max(prec1, best_prec1)
+        is_best = valacc > best_prec1
+        best_prec1 = max(valacc, best_prec1)
 
-        writer.add_scalar('Acc/valid', best_prec1, epoch)
+        writer.add_scalar('Acc/valid', valacc, epoch)
+        writer.add_scalar('Loss/valid', valloss, epoch)
+
 
         # save checkpoint
         if epoch > 0 and epoch % 50 == 0:
@@ -280,7 +272,7 @@ def run_unsupervised():
                 'best_prec1': best_prec1,
             }, filename=os.path.join(args.save_dir, 'best_model.th'))
 
-            writer.add_scalar('Acc/valid', best_prec1, epoch)
+            writer.add_scalar('Acc/valid_best', best_prec1, epoch)
 
 if __name__ == '__main__':
     run_unsupervised()

@@ -28,7 +28,7 @@ parser.add_argument('--resume', default='save', type=str, metavar='PATH',
 args = parser.parse_args()
 best_prec1 = 0
 
-writer =  SummaryWriter()
+writer =  SummaryWriter('Supervised Fastresnet -- cifar10 -- All')
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'):
     """
@@ -121,6 +121,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
 
+    return top1.avg, losses.avg
 
 def validate(val_loader, model, criterion):
     """
@@ -166,7 +167,7 @@ def validate(val_loader, model, criterion):
 
     print(' * Prec@1 {top1.avg:.3f}'.format(top1=top1))
 
-    return top1.avg
+    return top1.avg, losses.avg
 
 
 
@@ -219,19 +220,27 @@ def run_supervised():
 
     cudnn.benchmark = True
 
+    # training loop
     for epoch in range(args.start_epoch, args.epochs):
 
         # train for one epoch
         print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
-        train(train_loader, model, criterion, optimizer, epoch)
+        trainacc, trainloss = train(train_loader, model, criterion, optimizer, epoch)
+
+        writer.add_scalar('Acc/train', trainacc, epoch)
+        writer.add_scalar('Loss/train', trainloss, epoch)
+
         scheduler.step()
 
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion)
+        valacc, valloss = validate(val_loader, model, criterion)
+
+        writer.add_scalar('Acc/valid', valacc, epoch)
+        writer.add_scalar('Loss/valid', valloss, epoch)
 
         # remember best prec@1 and save checkpoint
-        is_best = prec1 > best_prec1
-        best_prec1 = max(prec1, best_prec1)
+        is_best = valacc > best_prec1
+        best_prec1 = max(valacc, best_prec1)
 
         if epoch > 0 and epoch % 50 == 0:
             print('Save checkpoint')
@@ -253,7 +262,7 @@ def run_supervised():
                 'best_prec1': best_prec1,
             }, filename=os.path.join(args.save_dir, 'best_model.th'))
 
-            writer.add_scalar('Acc/valid', best_prec1, epoch)
+            writer.add_scalar('Acc/valid_best', best_prec1, epoch)
 
 if __name__ == '__main__':
     run_supervised()

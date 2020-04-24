@@ -11,6 +11,7 @@ class TransformedDataset1(Dataset):
     def __init__(self, dataset, transform):
         self.data = dataset
         self.transform = transform
+
     def __len__(self):
         return len(self.data)
 
@@ -18,18 +19,6 @@ class TransformedDataset1(Dataset):
         x, y = self.data[index]
         x = self.transform(x)
         return x, y
-
-class TransformedDataset2(Dataset):
-    def __init__(self, dataset, transform):
-        self.data = dataset
-        self.transform = transform
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        item = self.data[idx]
-        item = self.transform(item)
-        return item
 
 def cifar10_unsupervised_dataloaders():
     print('Data Preparation')
@@ -57,7 +46,7 @@ def cifar10_unsupervised_dataloaders():
     ])
 
     # Train dataset with and without labels
-    cifar10_train_ds = datasets.CIFAR10('/data/', train='train', download=True)
+    cifar10_train_ds = datasets.CIFAR10('/data/', train=True, download=True)
     # Number of classes calculated here
     num_classes = len(cifar10_train_ds.classes)
 
@@ -68,7 +57,7 @@ def cifar10_unsupervised_dataloaders():
 
     indices = np.random.permutation(len(cifar10_train_ds))
     class_counters = list([0] * num_classes)
-    max_counter = len(cifar10_train_ds) // num_classes
+    max_counter = 4000 // num_classes
 
     for i in indices:
         dp = cifar10_train_ds[i]
@@ -86,15 +75,23 @@ def cifar10_unsupervised_dataloaders():
 
     # Labeled and unlabeled dataset
     train_labelled_ds = Subset(cifar10_train_ds, labelled_indices)
+    train_labelled_ds_t = TransformedDataset1(train_labelled_ds, train_transform)
+
+    # unlabelled ds and aug ds
     train_unlabelled_ds = Subset(cifar10_train_ds, unlabelled_indices)
 
-    train_labelled_ds = TransformedDataset1(train_labelled_ds, train_transform)
-    train_unlabelled_ds_t = TransformedDataset2(train_unlabelled_ds, train_transform)
-    train_unlabelled_aug_ds_t = TransformedDataset2(train_unlabelled_ds, unsupervised_train_transformation)
+    # apply transformation for both
+    train_unlabelled_ds_t = TransformedDataset1(train_unlabelled_ds, train_transform)
+
+    train_unlabelled_aug_ds_t = TransformedDataset1(train_unlabelled_ds, unsupervised_train_transformation)
+
+
+    print('Labelled dataset -- Num_samples: {0}, classes: {1}, \n Unsupervised dataset -- Num_samples {2}, Augmentation -- Num_samples: {3}'
+          .format(len(train_labelled_ds_t), 10, len(train_unlabelled_ds_t), len(train_unlabelled_aug_ds_t)))
 
     # Data loader for labeled and unlabeled train dataset
     train_labelled = DataLoader(
-        train_labelled_ds,
+        train_labelled_ds_t,
         batch_size=64,
         shuffle=False,
         num_workers=4,
@@ -118,7 +115,9 @@ def cifar10_unsupervised_dataloaders():
     )
 
     # Data loader for test dataset
-    cifar10_test_ds = datasets.CIFAR10('/data/', transform=test_transform, train='test', download=True)
+    cifar10_test_ds = datasets.CIFAR10('/data/', transform=test_transform, train=False, download=True)
+
+    print('Test set -- Num_samples: {0}'.format(len(cifar10_test_ds)))
 
     test = DataLoader(
         cifar10_test_ds, batch_size=64,
@@ -129,17 +128,23 @@ def cifar10_unsupervised_dataloaders():
 
     return train_labelled, train_unlabelled, train_unlabelled_aug, test
 
-
 def cifar10_supervised_dataloaders():
+
+    # picks = np.random.permutation(4000)
+
+    train_ds = datasets.CIFAR10(root='./data', train=True,
+                     transform=Compose([
+                         RandomHorizontalFlip(),
+                         RandomCrop(32, 4),
+                         ToTensor(),
+                         Normalize(mean=[0.485, 0.456, 0.406],
+                                   std=[0.229, 0.224, 0.225]),
+                     ]), download=True)
+
+    # train_ds = Subset(train_ds, picks)
+
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='./data', train=True,
-                         transform=Compose([
-                             RandomHorizontalFlip(),
-                             RandomCrop(32, 4),
-                             ToTensor(),
-                             Normalize(mean=[0.485, 0.456, 0.406],
-                                                  std=[0.229, 0.224, 0.225]),
-                         ]), download=True),
+        train_ds,
         batch_size=64,
         shuffle=True,
         num_workers=4,
@@ -147,6 +152,7 @@ def cifar10_supervised_dataloaders():
     )
 
     print('Loading dataset {0} for training -- Num_samples: {1}, num_classes: {2}'.format(datasets.CIFAR10.__name__,len(train_loader.dataset),10))
+
 
     val_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10(root='./data', train=False, transform=Compose([
