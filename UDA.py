@@ -98,8 +98,8 @@ def uda_train(train_labelled, train_unlabelled, train_unlabelled_aug, model, cri
             label_iter = iter(train_labelled)
             x, y = next(label_iter)
 
-        x = x.cuda()
-        y = y.cuda()
+        x = x.to(device)
+        y = y.to(device)
 
         y_pred = model(x)
 
