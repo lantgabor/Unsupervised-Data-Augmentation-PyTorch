@@ -16,7 +16,29 @@ The candidate should start with the classification task (CIFAR-10, SVHN), where 
 An optional advanced part of the assignment is to try out the UDA technique for semantic segmentation and/or 2D object detection on a lightweight dataset. [E.g. Cityscapes dataset.](https://www.cityscapes-dataset.com/) How much gain can be achieved with UDA in the early phase of evelopment, when only a small amount of labeled data is available? Which augmentations are the best?
 
 # Code
+## Examples
+
+| Name | Valid Loss | Valid Acc | Reference |
+| ---------------|------------|---------- | ------- |
+| UDA - 4000 - 46000 | 47.32| 86.57 | ~86 |
+| Supervised All|32.2| 90.12 | - |
+| Supervised All w s. Aug|19.83| 93.97| 94.08 |
+| Supervised 4000| 82.02 | 80.15 | - |
+
+
+
 ## Run
+   `python UDA.py` for semi-supervised UDA implemenetation with 46000 unlabelled - 4000 labelled data
+   
+   `python supervised.py` for fully supervised with 50000 labelled data -- for baseline
+   
+   `python supervised.py --limit 4000` for fully supervised with 4000 labelled data -- for baseline
+
+### Tensorboard
+Results are logged in `tensorboard`
+
+Run `tensorboard --logdir FOLDER_NAME` to see results
+
 
 # References
 

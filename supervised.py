@@ -4,17 +4,16 @@ import time
 import argparse
 
 import torch
-import torchvision
-from torch import nn, optim
+from torch import nn
 from torch.backends import cudnn
-from torch.nn.functional import kl_div, softmax, log_softmax
-from torch.autograd import Variable
+
 from torch.utils.tensorboard import SummaryWriter
 
 import dataset as dataset
 import networks
 
 parser = argparse.ArgumentParser(description='Pythorch Supervised FULL CIFAR-10 implementation')
+parser.add_argument('--limit', '-l', default=0, type=int, help='limit the number of labelled data used')
 parser.add_argument('--evaluate', '-e', action='store_true', help='Evaluation mode')
 parser.add_argument('--epochs', default=200, type=int, metavar='N',
                     help='number of total epochs to run')
@@ -25,10 +24,17 @@ parser.add_argument('--save-dir', dest='save_dir',
                     default='save', type=str)
 parser.add_argument('--resume', default='save', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: save)')
+parser.add_argument('--device', '-d', type=int, default=0, help='set cuda device')
 args = parser.parse_args()
 best_prec1 = 0
+device = args.device
 
-writer =  SummaryWriter('Supervised Fastresnet -- cifar10 -- All')
+if(args.limit > 0):
+    name = 'Supervised Fastresnet -- cifar10 -- {0}'.format(args.limit)
+else:
+    name = 'Supervised Fastresnet -- cifar10 -- All'
+
+writer =  SummaryWriter(name)
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'):
     """
@@ -87,8 +93,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        target = target.cuda()
-        input_var = input.cuda()
+        target = target.to(device)
+        input_var = input.to(device)
         target_var = target
 
         # compute output
@@ -137,9 +143,9 @@ def validate(val_loader, model, criterion):
     end = time.time()
     with torch.no_grad():
         for i, (input, target) in enumerate(val_loader):
-            target = target.cuda()
-            input_var = input.cuda()
-            target_var = target.cuda()
+            target = target.to(device)
+            input_var = input.to(device)
+            target_var = target.to(device)
 
             # compute output
             output = model(input_var)
@@ -180,9 +186,9 @@ def run_supervised():
         os.makedirs(args.save_dir)
 
     model = networks.fastresnet()
-    model.cuda()
+    model.to(device)
 
-    train_loader, val_loader = dataset.cifar10_supervised_dataloaders()
+    train_loader, val_loader = dataset.cifar10_supervised_dataloaders(args.limit)
 
     # tensorboard test
     # images, labels = next(iter(train_loader))
@@ -193,7 +199,7 @@ def run_supervised():
     # writer.close()
 
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().cuda()
+    criterion = nn.CrossEntropyLoss().to(device)
 
     optimizer = torch.optim.SGD(model.parameters(),
                                 lr=0.1,
