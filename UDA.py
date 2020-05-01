@@ -26,6 +26,7 @@ parser.add_argument('--resume', default='save', type=str, metavar='PATH',
 parser.add_argument('--device', '-d', type=int, default=0, help='set cuda device')
 args = parser.parse_args()
 best_prec1 = 0
+device = args.device
 
 writer =  SummaryWriter('UDA Fastresnet -- 4000-46000, NM 3,9')
 
