@@ -211,7 +211,8 @@ def run_unsupervised():
                                 nesterov=True)
 
     # warmup steps
-    t_max = args.epochs - 120
+    t_max = len(train_labelled) * args.epochs
+    eta_min = 0.03 * 0.004
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=0.)
 
