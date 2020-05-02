@@ -214,7 +214,7 @@ def run_unsupervised():
     t_max = len(train_labelled) * args.epochs
     eta_min = 0.03 * 0.004
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=0.)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max, eta_min=eta_min)
 
     if args.resume:
         if os.path.isfile(args.resume):
