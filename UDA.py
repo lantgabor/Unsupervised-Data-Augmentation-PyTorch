@@ -28,7 +28,7 @@ args = parser.parse_args()
 best_prec1 = 0
 device = args.device
 
-writer =  SummaryWriter('UDA Fastresnet -- 4000-46000, NM 3,9')
+writer =  SummaryWriter('1000, 3,9')
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'):
     """

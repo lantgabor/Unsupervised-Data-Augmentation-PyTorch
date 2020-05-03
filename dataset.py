@@ -59,7 +59,7 @@ def cifar10_unsupervised_dataloaders():
 
     indices = np.random.permutation(len(cifar10_train_ds))
     class_counters = list([0] * num_classes)
-    max_counter = 4000 // num_classes
+    max_counter = 10000 // num_classes
 
     for i in indices:
         dp = cifar10_train_ds[i]
@@ -96,7 +96,7 @@ def cifar10_unsupervised_dataloaders():
         train_labelled_ds_t,
         batch_size=64,
         shuffle=False,
-        num_workers=4,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -104,7 +104,7 @@ def cifar10_unsupervised_dataloaders():
         train_unlabelled_ds_t,
         batch_size=64,
         shuffle=False,
-        num_workers=4,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -112,7 +112,7 @@ def cifar10_unsupervised_dataloaders():
        train_unlabelled_aug_ds_t,
         batch_size=64,
         shuffle=False,
-        num_workers=4,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -124,7 +124,7 @@ def cifar10_unsupervised_dataloaders():
     test = DataLoader(
         cifar10_test_ds, batch_size=64,
         shuffle=False,
-        num_workers=4,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -151,7 +151,7 @@ def cifar10_supervised_dataloaders(limit = 0):
         train_ds,
         batch_size=64,
         shuffle=True,
-        num_workers=4,
+        num_workers=8,
         pin_memory=True
     )
 
@@ -166,7 +166,7 @@ def cifar10_supervised_dataloaders(limit = 0):
         ]), download=True),
         batch_size=64,
         shuffle=False,
-        num_workers=4,
+        num_workers=8,
         pin_memory=True
     )
 
