@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Subset, Dataset
+from torch.utils.data import DataLoader, Subset, Dataset, ConcatDataset
 from torchvision import datasets
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip, RandomErasing
 from RandAugment import RandAugment
@@ -34,7 +34,7 @@ def cifar10_unsupervised_dataloaders():
 
     unsupervised_train_transformation = Compose([
         Pad(4),
-        # RandomCrop(32, fill=128),
+        RandomCrop(32, fill=128),
         ToTensor(),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
@@ -75,12 +75,13 @@ def cifar10_unsupervised_dataloaders():
                 unlabelled_indices.append(i)
 
 
-    # Labeled and unlabeled dataset
+    # Labelled and unlabelled dataset
     train_labelled_ds = Subset(cifar10_train_ds, labelled_indices)
     train_labelled_ds_t = AddTransform(train_labelled_ds, train_transform)
 
     # unlabelled ds and aug ds
     train_unlabelled_ds = Subset(cifar10_train_ds, unlabelled_indices)
+    train_unlabelled_ds = ConcatDataset([train_unlabelled_ds,train_labelled_ds])
 
     # apply transformation for both
     train_unlabelled_ds_t = AddTransform(train_unlabelled_ds, train_transform)
