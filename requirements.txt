@@ -44,7 +44,7 @@ Mako==1.1.2
 Markdown==3.2.1
 MarkupSafe==1.1.1
 mccabe==0.6.1
-mlflow==1.7.2
+mlflow==1.23.1
 munch==2.5.0
 numpy==1.18.2
 nvidia-ml-py3==7.352.0
