@@ -93,7 +93,7 @@ tqdm==4.44.1
 typed-ast==1.4.1
 urllib3==1.25.8
 virtualenv==20.0.15
-waitress==1.4.3
+waitress==2.1.1
 warmup-scheduler==0.1.1
 websocket-client==0.57.0
 Werkzeug==1.0.0
